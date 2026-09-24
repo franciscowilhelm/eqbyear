@@ -2,8 +2,37 @@
 
 import * as dsp from './dsp.js';
 
-export const MAX_BANDS = 8;
+export const MAX_BANDS = 8;        // filters per ear (the engine has 8 per channel)
 export const TYPES = ['PK', 'LSC', 'HSC'];
+export const CHANNELS = ['both', 'L', 'R'];
+export const EARS = ['both', 'left', 'right'];
+
+// The band channel a new mark lands on while listening with this ear.
+export function channelForEar(ear) {
+  return ear === 'left' ? 'L' : ear === 'right' ? 'R' : 'both';
+}
+
+// Filters each ear would run, counting L+R bands on both sides.
+export function earLoad(bands) {
+  let L = 0, R = 0;
+  for (const b of bands) {
+    if (b.channel !== 'R') L++;
+    if (b.channel !== 'L') R++;
+  }
+  return { L, R };
+}
+
+// True when one more band on `channel` still fits in both ears' chains.
+export function canAdd(bands, channel) {
+  const { L, R } = earLoad(bands);
+  if (channel === 'L') return L < MAX_BANDS;
+  if (channel === 'R') return R < MAX_BANDS;
+  return L < MAX_BANDS && R < MAX_BANDS;
+}
+
+export function hasPerEar(bands) {
+  return bands.some((b) => b.channel === 'L' || b.channel === 'R');
+}
 
 const LEVEL_MIN = -60;
 const LEVEL_MAX = -6;
@@ -51,6 +80,7 @@ export function defaultState() {
     selectedId: null,
     draft: emptyDraft('peak'),
     toneWidth: 'sine',       // 'sine' | 'warble' | 'noise'
+    ear: 'both',             // 'both' | 'left' | 'right': where the tone plays
     theme: 'light',
   };
 }
@@ -67,6 +97,7 @@ function cleanBand(raw) {
     gain: round(num(raw.gain, -GAIN_LIMIT, GAIN_LIMIT, 0), 0.1),
     q: round(num(raw.q, Q_MIN, Q_MAX, 1), 0.01),
     enabled: raw.enabled !== false,
+    channel: CHANNELS.includes(raw.channel) ? raw.channel : 'both',
   };
 }
 
@@ -79,8 +110,7 @@ export function validate(raw) {
   if (Array.isArray(s.bands)) {
     for (const b of s.bands) {
       const cb = cleanBand(b);
-      if (cb) bands.push(cb);
-      if (bands.length >= MAX_BANDS) break;
+      if (cb && canAdd(bands, cb.channel)) bands.push(cb);
     }
   }
 
@@ -106,6 +136,7 @@ export function validate(raw) {
     selectedId,
     draft,
     toneWidth: dsp.TONE_WIDTHS.includes(s.toneWidth) ? s.toneWidth : d.toneWidth,
+    ear: EARS.includes(s.ear) ? s.ear : d.ear,
     theme: s.theme === 'dark' ? 'dark' : 'light',
   });
 }
@@ -139,7 +170,8 @@ export function createStore(initial) {
       set({ ...state, draft });
       return null;
     }
-    if (state.bands.length >= MAX_BANDS) {
+    const channel = channelForEar(state.ear);
+    if (!canAdd(state.bands, channel)) {
       // refused: drop the draft so the panel does not stay half-marked
       set({ ...state, draft: emptyDraft(draft.kind) });
       return null;
@@ -151,6 +183,7 @@ export function createStore(initial) {
       gain: spec.gain,
       q: spec.q,
       enabled: true,
+      channel,
     };
     set({
       ...state,
@@ -203,6 +236,11 @@ export function createStore(initial) {
     setToneWidth(w) {
       if (!dsp.TONE_WIDTHS.includes(w) || w === state.toneWidth) return state;
       return set({ ...state, toneWidth: w });
+    },
+
+    setEar(ear) {
+      if (!EARS.includes(ear) || ear === state.ear) return state;
+      return set({ ...state, ear });
     },
 
     setTheme(t) {
@@ -267,6 +305,11 @@ export function createStore(initial) {
       if ('gain' in patch) next.gain = round(num(patch.gain, -GAIN_LIMIT, GAIN_LIMIT, prev.gain), 0.1);
       if ('q' in patch) next.q = round(num(patch.q, Q_MIN, Q_MAX, prev.q), 0.01);
       if ('enabled' in patch) next.enabled = !!patch.enabled;
+      if ('channel' in patch && CHANNELS.includes(patch.channel) && patch.channel !== prev.channel) {
+        // Refused when the ear it moves onto already runs MAX_BANDS filters.
+        const others = state.bands.filter((b) => b.id !== id);
+        if (canAdd(others, patch.channel)) next.channel = patch.channel;
+      }
       const bands = state.bands.slice();
       bands[i] = next;
       return set({ ...state, bands });

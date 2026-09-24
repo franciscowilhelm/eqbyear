@@ -75,7 +75,13 @@
             <button type="button" data-width="warble" role="radio" title="Warble: sine swept ±5% at 5 Hz, smooths very narrow notches">Warble</button>
             <button type="button" data-width="noise" role="radio" title="Noise band: about one critical band wide, closest to how music is heard">Noise band</button>
           </div>
-          <span class="mut hint">W cycles &middot; wider signals smooth over very narrow features</span>
+          <span>Ear</span>
+          <div class="seg" id="earSeg" role="radiogroup" aria-label="Ear">
+            <button type="button" data-ear="both" role="radio" title="Both ears; new bands apply to both (key B)">Both</button>
+            <button type="button" data-ear="left" role="radio" title="Left ear only; new bands apply to the left ear (key L)">Left</button>
+            <button type="button" data-ear="right" role="radio" title="Right ear only; new bands apply to the right ear (key R)">Right</button>
+          </div>
+          <span class="mut hint">W width &middot; B L R ear</span>
         </div>
         <div class="sunk tapewrap"><svg id="tape" role="img" aria-label="Frequency tape"></svg></div>
       </div>

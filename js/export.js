@@ -3,11 +3,8 @@
 export const PEQ_FILENAME = 'dms-sweep-peq.txt';
 export const SESSION_FILENAME = 'dms-sweep-session.json';
 
-// Generic parametric EQ text. Enabled bands only, sorted by fc, numbered from 1.
-export function toPeqText(state) {
-  const preamp = Number(state && state.preampDb) || 0;
+function filterLines(bands, preamp) {
   const lines = [`Preamp: ${preamp.toFixed(1)} dB`];
-  const bands = Array.isArray(state && state.bands) ? state.bands : [];
   const on = bands.filter((b) => b && b.enabled !== false).sort((a, b) => a.fc - b.fc);
   on.forEach((b, i) => {
     lines.push(
@@ -15,7 +12,24 @@ export function toPeqText(state) {
         `Gain ${Number(b.gain).toFixed(1)} dB Q ${Number(b.q).toFixed(2)}`
     );
   });
-  return lines.join('\n');
+  return lines;
+}
+
+// Generic parametric EQ text. Enabled bands only, sorted by fc, numbered from 1.
+// With per-ear bands the text becomes two blocks under Equalizer APO's
+// `Channel: L` / `Channel: R` selectors; each block holds the L+R bands plus that
+// ear's own. Both blocks carry the same preamp so the L/R balance is untouched.
+export function toPeqText(state) {
+  const preamp = Number(state && state.preampDb) || 0;
+  const bands = (Array.isArray(state && state.bands) ? state.bands : []).filter(Boolean);
+  const perEar = bands.some((b) => b.channel === 'L' || b.channel === 'R');
+  if (!perEar) return filterLines(bands, preamp).join('\n');
+  const side = (ch) => bands.filter((b) => b.channel !== (ch === 'L' ? 'R' : 'L'));
+  return [
+    'Channel: L', ...filterLines(side('L'), preamp),
+    '',
+    'Channel: R', ...filterLines(side('R'), preamp),
+  ].join('\n');
 }
 
 export async function copyText(text) {
@@ -80,10 +94,12 @@ export function sessionToJson(state) {
         gain: b.gain,
         q: b.q,
         enabled: b.enabled !== false,
+        channel: b.channel || 'both',
       })),
       selectedId: s.selectedId ?? null,
       draft: s.draft,
       toneWidth: s.toneWidth,
+      ear: s.ear,
       theme: s.theme,
     },
     null,

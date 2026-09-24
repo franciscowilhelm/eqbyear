@@ -137,6 +137,7 @@ ids are unchanged.
   selectedId: null,
   draft: { kind:'peak'|'dip', start:null, top:null, end:null },  // Hz or null
   toneWidth: 'sine'|'warble'|'noise', // default 'sine'
+  ear: 'both'|'left'|'right',         // default 'both'; bands also carry channel:'both'|'L'|'R'
   theme: 'light'|'dark',   // default 'light'
 }
 ```
@@ -208,6 +209,35 @@ segment in the Sweep box; `W` cycles.
   sine, so switching width at one frequency keeps the level (tests: ±0.5 dB).
   Gaussian noise has a higher crest factor than a sine: at −6 dB volume, peaks
   occasionally touch the clipper.
+
+### Per ear
+
+`engine.setEar('both'|'left'|'right')` routes the tone (ramped over 15 ms). After the
+one shared preamp the signal splits into two chains of 8 biquads, `chains.L` and
+`chains.R`, merged to stereo before the level stage. A band with `channel: 'L'` or
+`'R'` runs on that ear only; `'both'` runs on both. Each ear holds at most 8 filters
+(`store.canAdd`), so the list can hold up to 16 bands. New bands take the channel
+of the current ear (`left → L`, `right → R`, `both → both`); the band card's L+R / L
+/ R select moves a band, refused when that ear is full. UI is the Ear segment in the
+Sweep box; keys `B` `L` `R`.
+
+The preamp stays shared so the balance between the ears never shifts. With per-ear
+bands the graph draws one curve per ear (left = accent, right = danger, the unfocused
+ear faint) and band numbers carry their ear ("3L"). The PEQ text becomes Equalizer
+APO channel blocks, each a full filter list with the same preamp:
+
+```
+Channel: L
+Preamp: -2.0 dB
+Filter 1: ON PK Fc 3100 Hz Gain -3.0 dB Q 2.50
+
+Channel: R
+Preamp: -2.0 dB
+Filter 1: ON PK Fc 6500 Hz Gain 1.5 dB Q 3.00
+```
+
+Without per-ear bands the text is unchanged. `engine.analyserDb(ch)` meters one ear;
+with no argument it returns the louder ear.
 
 ## Sweep strip (`js/sweep.js`)
 

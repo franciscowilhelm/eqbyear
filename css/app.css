@@ -374,6 +374,7 @@ svg { display: block; }
 
 .gb-sweep { flex: none; }
 .wrow { padding: 0 6px 6px; }
+.wrow .seg + span { margin-left: 8px; }
 .tapewrap { padding: 0 6px; height: 78px; }
 #tape {
   width: 100%;
@@ -511,7 +512,7 @@ svg { display: block; }
 
 .bcard {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1fr) 52px;
   gap: 4px 6px;
   align-items: center;
   padding: 5px 6px;
@@ -526,7 +527,7 @@ svg { display: block; }
 .bcard .n { grid-row: span 2; text-align: center; font-weight: 700; }
 .bcard.active .n { color: var(--navy); }
 .bcard .f95 { width: 100%; }
-.bcard .r2 { grid-column: 2 / 4; display: flex; align-items: center; gap: 6px; }
+.bcard .r2 { grid-column: 2 / 5; display: flex; align-items: center; gap: 6px; }
 .bcard .r2 .f95 { flex: 1 1 auto; min-width: 0; }
 .bcard.off .f95 { color: var(--disabled); }
 .bcard.off .f95 .u { color: var(--disabled); }

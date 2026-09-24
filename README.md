@@ -20,6 +20,7 @@ then open http://localhost:8080. Any static file server works.
 - `index.html`, `css/`, `js/` — the site. ES modules, no build step.
 - `js/dsp.js` — filter math (RBJ biquads), log axis, three-point mark to band.
 - `tests/dsp.test.mjs` — `node tests/dsp.test.mjs`
+- `tests/store.test.mjs` — per-ear bands and export: `node tests/store.test.mjs`
 - `design/` — mock generator and artboards the theme was ported from.
 - `docs/SPEC.md` — build contract.
 

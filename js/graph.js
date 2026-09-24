@@ -156,13 +156,43 @@ export class Graph {
       }));
     }
 
-    // The summed curve.
-    const sum = (f) => responseDb(on, f);
-    g.appendChild(el('path', {
-      d: this._path(sum),
-      fill: 'none', stroke: 'var(--accent)', 'stroke-width': '2',
-      'stroke-linejoin': 'round',
-    }));
+    // The summed curve. With per-ear bands, one curve per ear in the audiogram
+    // colours (left blue = accent, right red = danger); the ear not being
+    // listened to is drawn faint.
+    const perEar = bands.some((b) => b.channel === 'L' || b.channel === 'R');
+    const earSum = (ch) => {
+      const list = on.filter((b) => b.channel !== (ch === 'L' ? 'R' : 'L'));
+      return (f) => responseDb(list, f);
+    };
+    let sum;
+    if (!perEar) {
+      sum = (f) => responseDb(on, f);
+      g.appendChild(el('path', {
+        d: this._path(sum),
+        fill: 'none', stroke: 'var(--accent)', 'stroke-width': '2',
+        'stroke-linejoin': 'round',
+      }));
+    } else {
+      const focus = st.ear === 'right' ? 'R' : st.ear === 'left' ? 'L' : null;
+      const color = { L: 'var(--accent)', R: 'var(--danger)' };
+      // Draw the focused ear last so it sits on top.
+      for (const ch of focus === 'L' ? ['R', 'L'] : ['L', 'R']) {
+        g.appendChild(el('path', {
+          d: this._path(earSum(ch)),
+          fill: 'none', stroke: color[ch], 'stroke-width': '2',
+          'stroke-linejoin': 'round',
+          opacity: focus && focus !== ch ? '0.35' : '1',
+        }));
+      }
+      ['L', 'R'].forEach((ch, i) => {
+        g.appendChild(el('text', {
+          x: w - 8 - (1 - i) * 18, y: 16, 'text-anchor': 'end',
+          'font-family': 'var(--sans)', 'font-size': '11', 'font-weight': '700',
+          fill: color[ch],
+        }, ch));
+      });
+      sum = earSum(st.ear === 'right' ? 'R' : 'L');
+    }
 
     // Draft marks: dots on the summed curve, labelled start / top / end.
     const draft = st.draft || {};
@@ -184,12 +214,14 @@ export class Graph {
     }
 
     // Band numbers above the frequency labels; accent for the selected band.
+    // Per-ear bands carry their ear letter ("3L").
     bands.forEach((b, i) => {
+      const ch = b.channel === 'L' || b.channel === 'R' ? b.channel : '';
       g.appendChild(el('text', {
         x: freqToX(b.fc, w).toFixed(1), y: h - 22, 'text-anchor': 'middle',
         'font-family': 'var(--sans)', 'font-size': '11',
         fill: b.id === st.selectedId ? 'var(--accent)' : 'var(--mute)',
-      }, String(i + 1)));
+      }, String(i + 1) + ch));
     });
 
     // Playhead.

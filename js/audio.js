@@ -1,8 +1,10 @@
 // Web Audio engine. Nothing is created until start() runs from a user gesture.
 // Chain: osc   -> oscMix ---+
-//        noise -> bp x2 -> noiseMix -+-> toneGain -> preampGain -> biquad[0..7]
-//        -> levelGain -> ceiling -> clipper (hard limit at the ceiling)
-//        -> analyser -> destination
+//        noise -> bp x2 -> noiseMix -+-> toneGain -> preampGain
+//        -+-> biquad L[0..7] -> earL -+
+//         +-> biquad R[0..7] -> earR -+-> merger (stereo) -> levelGain -> ceiling
+//        -> clipper (hard limit at the ceiling) -> analyser -> destination
+//                                    \-> splitter -> analyser L / R (metering only)
 // lfo -> lfoDepth -> osc.detune gives the warble.
 
 import {
@@ -18,6 +20,7 @@ const CEILING = 0.5;     // fixed -6 dBFS output ceiling
 const NOISE_SECONDS = 10; // looped noise buffer; long enough not to hear the loop
 
 const TYPE_MAP = { PK: 'peaking', LSC: 'lowshelf', HSC: 'highshelf' };
+const EARS = ['both', 'left', 'right'];
 
 const dbToGain = (db) => Math.pow(10, db / 20);
 
@@ -32,6 +35,7 @@ export class AudioEngine {
     this._levelDb = -18;
     this._playing = false;
     this._width = 'sine';
+    this._ear = 'both';
   }
 
   // Build the graph. Must be called from a user gesture.
@@ -98,17 +102,25 @@ export class AudioEngine {
     this.preampGain = ctx.createGain();
     this.preampGain.gain.setValueAtTime(1, now);
 
-    // Eight filters live in the chain for the life of the engine; unused ones
-    // sit flat (peaking, 0 dB) so the node graph never has to be rebuilt.
-    this.biquads = [];
-    for (let i = 0; i < BANDS; i++) {
-      const bq = ctx.createBiquadFilter();
-      bq.type = 'peaking';
-      bq.frequency.setValueAtTime(1000, now);
-      bq.Q.setValueAtTime(1, now);
-      bq.gain.setValueAtTime(0, now);
-      this.biquads.push(bq);
+    // One chain of eight filters per ear, alive for the life of the engine;
+    // unused ones sit flat (peaking, 0 dB) so the graph never has to be rebuilt.
+    this.chains = { L: [], R: [] };
+    for (const ch of ['L', 'R']) {
+      for (let i = 0; i < BANDS; i++) {
+        const bq = ctx.createBiquadFilter();
+        bq.type = 'peaking';
+        bq.frequency.setValueAtTime(1000, now);
+        bq.Q.setValueAtTime(1, now);
+        bq.gain.setValueAtTime(0, now);
+        this.chains[ch].push(bq);
+      }
     }
+
+    // Ear routing: each chain feeds one side of a stereo merger.
+    this.earGain = { L: ctx.createGain(), R: ctx.createGain() };
+    this.earGain.L.gain.setValueAtTime(1, now);
+    this.earGain.R.gain.setValueAtTime(1, now);
+    this.merger = ctx.createChannelMerger(2);
 
     this.levelGain = ctx.createGain();
     this.levelGain.gain.setValueAtTime(dbToGain(this._levelDb), now);
@@ -133,16 +145,27 @@ export class AudioEngine {
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     this._buf = new Float32Array(this.analyser.fftSize);
+    // Per-ear meters on a side branch; AnalyserNode itself down-mixes to mono.
+    this.splitter = ctx.createChannelSplitter(2);
+    this.meters = { L: ctx.createAnalyser(), R: ctx.createAnalyser() };
+    this.meters.L.fftSize = 2048;
+    this.meters.R.fftSize = 2048;
 
     this.osc.connect(this.oscMix).connect(this.toneGain);
     let nn = this.noise;
     for (const bp of this.bandpass) nn = nn.connect(bp);
     nn.connect(this.noiseNorm).connect(this.noiseMix).connect(this.toneGain);
     this.toneGain.connect(this.preampGain);
-    let node = this.preampGain;
-    for (const bq of this.biquads) node = node.connect(bq);
-    node.connect(this.levelGain).connect(this.ceiling)
+    ['L', 'R'].forEach((ch, i) => {
+      let node = this.preampGain;
+      for (const bq of this.chains[ch]) node = node.connect(bq);
+      node.connect(this.earGain[ch]).connect(this.merger, 0, i);
+    });
+    this.merger.connect(this.levelGain).connect(this.ceiling)
       .connect(this.clipper).connect(this.analyser).connect(ctx.destination);
+    this.clipper.connect(this.splitter);
+    this.splitter.connect(this.meters.L, 0);
+    this.splitter.connect(this.meters.R, 1);
 
     this.osc.start();
     this.lfo.start();
@@ -151,6 +174,7 @@ export class AudioEngine {
     if (ctx.state === 'suspended') await ctx.resume();
     this.state = 'running';
     this._applyWidth();
+    this._applyEar();
     if (this._playing) this.play();
   }
 
@@ -173,6 +197,25 @@ export class AudioEngine {
     if (w === this._width) return;
     this._width = w;
     this._applyWidth();
+  }
+
+  // 'both' | 'left' | 'right': which ear hears the tone. Ramped, no clicks.
+  setEar(ear) {
+    const e = EARS.includes(ear) ? ear : 'both';
+    if (e === this._ear) return;
+    this._ear = e;
+    this._applyEar();
+  }
+
+  _applyEar() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    for (const [ch, g] of [['L', this.earGain.L.gain], ['R', this.earGain.R.gain]]) {
+      const on = this._ear === 'both' || this._ear === (ch === 'L' ? 'left' : 'right');
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+      g.linearRampToValueAtTime(on ? 1 : 0, now + RAMP);
+    }
   }
 
   _applyWidth() {
@@ -216,17 +259,25 @@ export class AudioEngine {
     this.levelGain.gain.setTargetAtTime(dbToGain(db), this.ctx.currentTime, SMOOTH);
   }
 
-  // bands: up to 8 {type, fc, gain, q, enabled}. Filters beyond the list, and
-  // disabled ones, are set flat. eqOn === false flattens everything and drops
-  // the preamp to unity. Preamp sits before the biquads so boosts cannot push
-  // the signal past the ceiling.
+  // bands: {type, fc, gain, q, enabled, channel}. channel 'L' / 'R' runs on
+  // that ear only, 'both' (or missing) on both; each ear takes up to 8. Filters
+  // beyond the list, and disabled ones, are set flat. eqOn === false flattens
+  // everything and drops the preamp to unity. The one preamp sits before both
+  // chains so boosts cannot pass the ceiling and the L/R balance never shifts.
   setBands(bands, eqOn = true, preampDb = 0) {
     if (this.state !== 'running') return;
     const now = this.ctx.currentTime;
-    const list = Array.isArray(bands) ? bands : [];
+    const all = Array.isArray(bands) ? bands : [];
     this.preampGain.gain.setTargetAtTime(eqOn ? dbToGain(preampDb) : 1, now, SMOOTH);
+    for (const ch of ['L', 'R']) {
+      const skip = ch === 'L' ? 'R' : 'L';
+      this._setChain(this.chains[ch], all.filter((b) => b && b.channel !== skip), eqOn, now);
+    }
+  }
+
+  _setChain(chain, list, eqOn, now) {
     for (let i = 0; i < BANDS; i++) {
-      const bq = this.biquads[i];
+      const bq = chain[i];
       const b = list[i];
       const live = eqOn && b && b.enabled !== false;
       if (live) {
@@ -244,10 +295,12 @@ export class AudioEngine {
     }
   }
 
-  // RMS of the time-domain buffer, in dBFS. -Infinity for digital silence.
-  analyserDb() {
+  // RMS of the output in dBFS: of one ear with ch 'L' / 'R', else of the louder
+  // ear (so one-ear playback reads like both). -Infinity for digital silence.
+  analyserDb(ch) {
     if (this.state !== 'running') return -Infinity;
-    this.analyser.getFloatTimeDomainData(this._buf);
+    if (ch !== 'L' && ch !== 'R') return Math.max(this.analyserDb('L'), this.analyserDb('R'));
+    this.meters[ch].getFloatTimeDomainData(this._buf);
     let sum = 0;
     for (let i = 0; i < this._buf.length; i++) sum += this._buf[i] * this._buf[i];
     const rms = Math.sqrt(sum / this._buf.length);

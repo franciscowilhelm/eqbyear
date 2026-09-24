@@ -1,7 +1,7 @@
 // Wiring: DOM for band list / mark panel / gate / theme, keyboard, autosave.
 
 import * as dsp from './dsp.js';
-import { createStore } from './store.js';
+import { createStore, canAdd, channelForEar, earLoad, hasPerEar } from './store.js';
 import * as storage from './storage.js';
 import {
   toPeqText,
@@ -40,6 +40,7 @@ const el = {
   marks: { start: $('mkStart'), top: $('mkTop'), end: $('mkEnd') },
   kindSw: $('kindSw'),
   widthSeg: $('widthSeg'),
+  earSeg: $('earSeg'),
   addBand: $('addBand'),
   undoBtn: $('undoBtn'),
   clearBtn: $('clearBtn'),
@@ -116,6 +117,7 @@ function pushAudio(s) {
   try {
     engine.setFrequency(s.freq);
     engine.setWidth(s.toneWidth);
+    engine.setEar(s.ear);
     engine.setLevel(s.levelDb);
     engine.setBands(s.bands, s.eqOn, s.preampDb);
   } catch (e) {
@@ -171,6 +173,13 @@ function bandRow(band) {
     '</select>' + CHEV +
     '</span>' +
     '<span class="f95"><input class="inp" data-f="fc" type="number" step="1" min="20" max="20000" aria-label="Frequency in hertz"><i class="u">Hz</i>' + ARROWS + '</span>' +
+    '<span class="f95 w-ch" title="Ear this band applies to">' +
+    '<select class="sel95" data-f="channel" aria-label="Ear">' +
+    '<option value="both">L+R</option>' +
+    '<option value="L">L</option>' +
+    '<option value="R">R</option>' +
+    '</select>' + CHEV +
+    '</span>' +
     '<div class="r2">' +
     '<span class="f95"><input class="inp" data-f="gain" type="number" step="0.5" aria-label="Gain in decibels"><i class="u">dB</i>' + ARROWS + '</span>' +
     '<span class="f95"><i class="u">Q</i><input class="inp" data-f="q" type="number" step="0.1" aria-label="Q">' + ARROWS + '</span>' +
@@ -212,8 +221,13 @@ function renderBands(s) {
       rows.set(b.id, row);
       el.bandList.appendChild(row);
     }
-    if (s.bands.length < MAX_BANDS) el.bandList.appendChild(emptyRow(s.bands.length + 1));
   }
+  // The placeholder row follows capacity on the ear new marks land on.
+  const room = canAdd(s.bands, channelForEar(s.ear));
+  const tail = el.bandList.querySelector('.bcard.empty');
+  if (room && !tail) el.bandList.appendChild(emptyRow(s.bands.length + 1));
+  else if (!room && tail) tail.remove();
+  else if (tail) tail.querySelector('.n').textContent = String(s.bands.length + 1);
 
   s.bands.forEach((b, i) => {
     const row = rows.get(b.id);
@@ -222,6 +236,7 @@ function renderBands(s) {
     row.classList.toggle('off', b.enabled === false);
     row.querySelector('.n').textContent = String(i + 1);
     setValue(row.querySelector('[data-f="type"]'), b.type);
+    setValue(row.querySelector('[data-f="channel"]'), b.channel || 'both');
     setValue(row.querySelector('[data-f="fc"]'), String(b.fc));
     setValue(row.querySelector('[data-f="gain"]'), trimNum(b.gain, 1));
     setValue(row.querySelector('[data-f="q"]'), trimNum(b.q, 2));
@@ -230,8 +245,13 @@ function renderBands(s) {
     sw.title = TYPE_LABEL[b.type];
   });
 
-  el.bandCount.textContent =
-    s.bands.length >= MAX_BANDS ? '8 of 8 · remove one to add' : `${s.bands.length} of ${MAX_BANDS}`;
+  if (hasPerEar(s.bands)) {
+    const { L, R } = earLoad(s.bands);
+    el.bandCount.textContent = `L ${L} of ${MAX_BANDS} · R ${R} of ${MAX_BANDS}`;
+  } else {
+    el.bandCount.textContent =
+      s.bands.length >= MAX_BANDS ? '8 of 8 · remove one to add' : `${s.bands.length} of ${MAX_BANDS}`;
+  }
 }
 
 function patchField(id, field, raw) {
@@ -248,7 +268,7 @@ el.bandList.addEventListener('focusin', (e) => {
 el.bandList.addEventListener('input', (e) => {
   const row = e.target.closest('.bcard[data-id]');
   const f = e.target.dataset && e.target.dataset.f;
-  if (!row || !f || f === 'type' || f === 'enabled') return;
+  if (!row || !f || f === 'type' || f === 'channel' || f === 'enabled') return;
   const id = row.dataset.id;
   const key = `${id}:${f}`;
   clearTimeout(patchTimers.get(key));
@@ -263,6 +283,12 @@ el.bandList.addEventListener('change', (e) => {
   const id = row.dataset.id;
   clearTimeout(patchTimers.get(`${id}:${f}`));
   if (f === 'type') store.updateBand(id, { type: e.target.value });
+  else if (f === 'channel') {
+    store.updateBand(id, { channel: e.target.value });
+    // A refused move (that ear is full) leaves the band where it was.
+    const band = store.get().bands.find((b) => b.id === id);
+    if (band) e.target.value = band.channel;
+  }
   else patchField(id, f, e.target.value);
 });
 
@@ -321,6 +347,19 @@ function cycleWidth() {
   const all = dsp.TONE_WIDTHS;
   store.setToneWidth(all[(all.indexOf(store.get().toneWidth) + 1) % all.length]);
 }
+
+function renderEar(s) {
+  for (const btn of el.earSeg.querySelectorAll('button[data-ear]')) {
+    const on = btn.dataset.ear === s.ear;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+}
+
+el.earSeg.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-ear]');
+  if (btn) store.setEar(btn.dataset.ear);
+});
 
 el.widthSeg.addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-width]');
@@ -431,6 +470,9 @@ window.addEventListener('keydown', (e) => {
   if (k === 'd') store.setDraftKind(s.draft.kind === 'dip' ? 'peak' : 'dip');
   else if (k === 'z') store.undo();
   else if (k === 'w') cycleWidth();
+  else if (k === 'b') store.setEar('both');
+  else if (k === 'l') store.setEar('left');
+  else if (k === 'r') store.setEar('right');
 });
 
 // ------------------------------------------------------------------ render ---
@@ -463,6 +505,7 @@ function render(s) {
 
   renderMarks(s);
   renderWidth(s);
+  renderEar(s);
   renderBands(s);
 
   el.peq.textContent = toPeqText(s);
