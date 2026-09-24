@@ -50,6 +50,7 @@ export function defaultState() {
     bands: [],
     selectedId: null,
     draft: emptyDraft('peak'),
+    toneWidth: 'sine',       // 'sine' | 'warble' | 'noise'
     theme: 'light',
   };
 }
@@ -104,6 +105,7 @@ export function validate(raw) {
     bands,
     selectedId,
     draft,
+    toneWidth: dsp.TONE_WIDTHS.includes(s.toneWidth) ? s.toneWidth : d.toneWidth,
     theme: s.theme === 'dark' ? 'dark' : 'light',
   });
 }
@@ -196,6 +198,11 @@ export function createStore(initial) {
 
     setPreampAuto() {
       return set({ ...state, preampAuto: true });
+    },
+
+    setToneWidth(w) {
+      if (!dsp.TONE_WIDTHS.includes(w) || w === state.toneWidth) return state;
+      return set({ ...state, toneWidth: w });
     },
 
     setTheme(t) {

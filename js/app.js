@@ -39,6 +39,7 @@ const el = {
   playLabel: $('playLabel'),
   marks: { start: $('mkStart'), top: $('mkTop'), end: $('mkEnd') },
   kindSw: $('kindSw'),
+  widthSeg: $('widthSeg'),
   addBand: $('addBand'),
   undoBtn: $('undoBtn'),
   clearBtn: $('clearBtn'),
@@ -114,6 +115,7 @@ function setValue(node, value) {
 function pushAudio(s) {
   try {
     engine.setFrequency(s.freq);
+    engine.setWidth(s.toneWidth);
     engine.setLevel(s.levelDb);
     engine.setBands(s.bands, s.eqOn, s.preampDb);
   } catch (e) {
@@ -304,6 +306,26 @@ el.kindSw.addEventListener('click', () => {
   store.setDraftKind(store.get().draft.kind === 'dip' ? 'peak' : 'dip');
 });
 el.addBand.addEventListener('click', () => store.commitDraft());
+
+// ------------------------------------------------------------ tone width ---
+
+function renderWidth(s) {
+  for (const btn of el.widthSeg.querySelectorAll('button[data-width]')) {
+    const on = btn.dataset.width === s.toneWidth;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+}
+
+function cycleWidth() {
+  const all = dsp.TONE_WIDTHS;
+  store.setToneWidth(all[(all.indexOf(store.get().toneWidth) + 1) % all.length]);
+}
+
+el.widthSeg.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-width]');
+  if (btn) store.setToneWidth(btn.dataset.width);
+});
 el.undoBtn.addEventListener('click', () => store.undo());
 el.clearBtn.addEventListener('click', () => store.clearDraft());
 
@@ -408,6 +430,7 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === 'd') store.setDraftKind(s.draft.kind === 'dip' ? 'peak' : 'dip');
   else if (k === 'z') store.undo();
+  else if (k === 'w') cycleWidth();
 });
 
 // ------------------------------------------------------------------ render ---
@@ -439,6 +462,7 @@ function render(s) {
   el.levelOut.textContent = fmtDb(s.levelDb);
 
   renderMarks(s);
+  renderWidth(s);
   renderBands(s);
 
   el.peq.textContent = toPeqText(s);

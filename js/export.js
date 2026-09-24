@@ -83,6 +83,7 @@ export function sessionToJson(state) {
       })),
       selectedId: s.selectedId ?? null,
       draft: s.draft,
+      toneWidth: s.toneWidth,
       theme: s.theme,
     },
     null,

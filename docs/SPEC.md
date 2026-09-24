@@ -136,6 +136,7 @@ ids are unchanged.
   bands: [],               // ≤ 8 of {id, type:'PK'|'LSC'|'HSC', fc, gain, q, enabled}
   selectedId: null,
   draft: { kind:'peak'|'dip', start:null, top:null, end:null },  // Hz or null
+  toneWidth: 'sine'|'warble'|'noise', // default 'sine'
   theme: 'light'|'dark',   // default 'light'
 }
 ```
@@ -191,6 +192,22 @@ peaking Q is RBJ Q, so pass fc, Q, gain directly. Shelf Q: Web Audio ignores Q f
 shelves; that is acceptable for rev 1 (the graph will use RBJ shelf-with-Q; note the
 mismatch in a code comment). Never let output exceed the ceiling by design: preamp is
 applied before the biquads. Frequency changes must glide, never jump.
+
+### Tone width
+
+`engine.setWidth('sine'|'warble'|'noise')` picks the test signal centred on the needle,
+crossfading over the 15 ms ramp. Store action `setToneWidth(w)`; UI is the Width
+segment in the Sweep box; `W` cycles.
+
+- **Sine**: the plain oscillator.
+- **Warble**: a 5 Hz sine LFO on `osc.detune`, ±5 % (84.5 cents).
+- **Noise band**: looped 10 s Gaussian white noise → 2 cascaded `bandpass` biquads.
+  The −3 dB width is one critical band (Zwicker & Terhardt), capped at one octave,
+  and the stage Q is pre-warped for the real sample rate (pre-warp capped, so above
+  ~18 kHz the band is narrower). `dsp.noiseNormGain` scales it to the RMS of the
+  sine, so switching width at one frequency keeps the level (tests: ±0.5 dB).
+  Gaussian noise has a higher crest factor than a sine: at −6 dB volume, peaks
+  occasionally touch the clipper.
 
 ## Sweep strip (`js/sweep.js`)
 

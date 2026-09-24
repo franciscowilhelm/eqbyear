@@ -373,6 +373,7 @@ svg { display: block; }
 .col { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
 
 .gb-sweep { flex: none; }
+.wrow { padding: 0 6px 6px; }
 .tapewrap { padding: 0 6px; height: 78px; }
 #tape {
   width: 100%;

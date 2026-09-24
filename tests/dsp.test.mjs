@@ -4,6 +4,8 @@
 
 import {
   freqToX, xToFreq, magnitudeDb, bandFromMarks, autoPreamp, fmtHz, fmtK,
+  criticalBandHz, noiseBandwidthHz, noiseStageQ, bandpassPower, noiseNormGain,
+  WARBLE_CENTS, NOISE_STAGES,
 } from '../js/dsp.js';
 
 let failures = 0;
@@ -94,6 +96,63 @@ eq('autoPreamp([+2, -4.5])', autoPreamp([
   { fc: 105, gain: 2, q: 0.7, type: 'LSC', enabled: true },
   { fc: 3100, gain: -4.5, q: 2.6, type: 'PK', enabled: true },
 ]), -2);
+
+// ---- tone width -------------------------------------------------------------
+console.log('tone width');
+near('warble ±5 % in cents', WARBLE_CENTS, 84.467, 1e-3);
+near('critical band at 1 kHz (Zwicker)', criticalBandHz(1000), 162.2, 0.5);
+near('critical band at 100 Hz ≈ 100 Hz', criticalBandHz(100), 100.8, 0.5);
+near('noise band at 50 Hz capped at one octave', noiseBandwidthHz(50), 50 * (Math.SQRT2 - Math.SQRT1_2), 1e-9);
+
+// The cascade's measured -3 dB width should match the target within 10 %.
+function measuredBw(fc, fs) {
+  const q = noiseStageQ(fc, fs);
+  const p = (f) => Math.pow(bandpassPower(fc, q, f, fs), NOISE_STAGES);
+  const edge = (dir) => {
+    let lo = fc, hi = dir > 0 ? fs / 2 - 1 : 1; // bisect for |H|^2 = 0.5
+    for (let i = 0; i < 60; i++) {
+      const mid = Math.sqrt(lo * hi);
+      if (p(mid) > 0.5) lo = mid; else hi = mid;
+    }
+    return lo;
+  };
+  return edge(1) - edge(-1);
+}
+for (const [fc, fs] of [[1000, 48000], [4000, 48000], [10000, 44100], [16000, 48000]]) {
+  const bw = measuredBw(fc, fs);
+  const target = noiseBandwidthHz(fc);
+  ok(`noise band -3 dB width at ${fc} Hz / ${fs}`, Math.abs(bw / target - 1) < 0.1,
+    `measured ${bw.toFixed(1)} Hz, target ${target.toFixed(1)} Hz`);
+}
+
+// Simulate the Web Audio chain: seeded Gaussian noise through the cascade,
+// times noiseNormGain, should have the RMS of a unit sine (-3.01 dBFS) ±0.5 dB.
+function rng(seed) {
+  let x = seed >>> 0;
+  return () => ((x = (x * 1664525 + 1013904223) >>> 0) + 0.5) / 4294967296;
+}
+function simulatedRmsDb(fc, fs) {
+  const rand = rng(12345);
+  const q = noiseStageQ(fc, fs);
+  const w0 = (2 * Math.PI * fc) / fs, al = Math.sin(w0) / (2 * q), c = Math.cos(w0);
+  const a0 = 1 + al, b0 = al / a0, b2 = -al / a0, a1 = (-2 * c) / a0, a2 = (1 - al) / a0;
+  const st = Array.from({ length: NOISE_STAGES }, () => [0, 0, 0, 0]);
+  const g = noiseNormGain(fc, fs);
+  const n = fs * 4, skip = fs / 2;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    let x = Math.sqrt(-2 * Math.log(rand())) * Math.cos(2 * Math.PI * rand());
+    for (const s of st) { // direct form I
+      const y = b0 * x + b2 * s[1] - a1 * s[2] - a2 * s[3];
+      s[1] = s[0]; s[0] = x; s[3] = s[2]; s[2] = y; x = y;
+    }
+    if (i >= skip) sum += (g * x) ** 2;
+  }
+  return 10 * Math.log10(sum / (n - skip));
+}
+for (const fc of [100, 1000, 8000]) {
+  near(`noise band RMS at ${fc} Hz matches sine (dB)`, simulatedRmsDb(fc, 48000), -3.0103, 0.5);
+}
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) {

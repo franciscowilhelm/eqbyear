@@ -68,6 +68,15 @@
     <div class="col">
 
       <div class="gb gb-sweep"><span class="t">Sweep (drag slowly)</span>
+        <div class="row wrow">
+          <span>Width</span>
+          <div class="seg" id="widthSeg" role="radiogroup" aria-label="Tone width">
+            <button type="button" data-width="sine" role="radio" title="Pure sine: finds sharp peaks and dips">Sine</button>
+            <button type="button" data-width="warble" role="radio" title="Warble: sine swept ±5% at 5 Hz, smooths very narrow notches">Warble</button>
+            <button type="button" data-width="noise" role="radio" title="Noise band: about one critical band wide, closest to how music is heard">Noise band</button>
+          </div>
+          <span class="mut hint">W cycles &middot; wider signals smooth over very narrow features</span>
+        </div>
         <div class="sunk tapewrap"><svg id="tape" role="img" aria-label="Frequency tape"></svg></div>
       </div>
 

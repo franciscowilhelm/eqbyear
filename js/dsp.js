@@ -117,3 +117,91 @@ export function fmtK(f) {
 
 export const MAJOR_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 export const MINOR_TICKS = [30, 40, 60, 70, 80, 90, 300, 400, 600, 700, 800, 900, 3000, 4000, 6000, 7000, 8000, 9000];
+
+// ---- tone width: sine -> warble -> narrowband noise ------------------------
+// One control for how much of the spectrum around the needle the test signal
+// covers. A sine finds sharp resonances; wider signals smooth over very narrow
+// features (fit-dependent notches, threshold microstructure), closer to how
+// broadband music is heard.
+
+export const TONE_WIDTHS = ['sine', 'warble', 'noise'];
+
+// Warble: sinusoidal frequency modulation, ±5 % at 5 Hz (audiometric range is
+// roughly ±2–5 % at 4–10 Hz). Expressed in cents so one depth works at any fc.
+export const WARBLE_RATE_HZ = 5;
+export const WARBLE_DEPTH = 0.05;
+export const WARBLE_CENTS = 1200 * Math.log2(1 + WARBLE_DEPTH);
+
+// Narrowband noise is shaped by NOISE_STAGES cascaded RBJ band-pass filters.
+export const NOISE_STAGES = 2;
+// Widest band allowed: one octave. Below ~200 Hz a critical band is wider than
+// that, and an unlimited band would spread noise far from the needle.
+const MAX_BW_FRACTION = Math.SQRT2 - Math.SQRT1_2; // octave width / fc
+
+// Critical bandwidth in Hz (Zwicker & Terhardt 1980). ~100 Hz below 500 Hz,
+// about 1/3 octave above.
+export function criticalBandHz(f) {
+  const k = f / 1000;
+  return 25 + 75 * Math.pow(1 + 1.4 * k * k, 0.69);
+}
+
+// Target -3 dB bandwidth of the noise band at fc, in Hz.
+export function noiseBandwidthHz(fc) {
+  return Math.min(criticalBandHz(fc), MAX_BW_FRACTION * fc);
+}
+
+// Q for each stage so the cascade has the target -3 dB bandwidth. Cascading n
+// equal band-passes narrows the band by sqrt(2^(1/n) - 1), so each stage is
+// made that much wider. The analog Q is then pre-warped through RBJ's
+// bandwidth-in-octaves form; without it the band shrinks towards Nyquist
+// (to less than half the target at 16 kHz / 48 kHz). The correction is capped:
+// above ~18 kHz a critical band no longer fits below Nyquist, and the band is
+// kept narrower rather than smeared down the spectrum.
+const MAX_PREWARP = 4;
+export function noiseStageQ(fc, fs = FS, stages = NOISE_STAGES) {
+  const q = (fc / noiseBandwidthHz(fc)) * Math.sqrt(Math.pow(2, 1 / stages) - 1);
+  const octaves = (2 / Math.LN2) * Math.asinh(1 / (2 * q));
+  const w0 = (2 * Math.PI * fc) / fs;
+  const warp = Math.min(MAX_PREWARP, w0 / Math.sin(w0));
+  return 1 / (2 * Math.sinh((Math.LN2 / 2) * octaves * warp));
+}
+
+// |H|^2 of one RBJ band-pass (constant 0 dB peak gain), the same filter as
+// Web Audio's 'bandpass' BiquadFilterNode.
+export function bandpassPower(fc, q, f, fs = FS) {
+  const w0 = (2 * Math.PI * fc) / fs;
+  const al = Math.sin(w0) / (2 * q);
+  const c0 = Math.cos(w0);
+  const w = (2 * Math.PI * f) / fs;
+  const cw = Math.cos(w), sw = Math.sin(w), c2w = Math.cos(2 * w), s2w = Math.sin(2 * w);
+  // numerator al * (1 - z^-2)
+  const nr = al * (1 - c2w), ni = al * s2w;
+  const a0 = 1 + al, a1 = -2 * c0, a2 = 1 - al;
+  const dr = a0 + a1 * cw + a2 * c2w, di = -a1 * sw - a2 * s2w;
+  return (nr * nr + ni * ni) / (dr * dr + di * di);
+}
+
+// Gain that gives unit-variance white noise, after the band-pass cascade, the
+// same RMS as a full-scale sine (1/sqrt 2). Equal RMS within about one
+// critical band means roughly equal loudness, so switching width at the same
+// needle position should not jump in level.
+export function noiseNormGain(fc, fs = FS, stages = NOISE_STAGES) {
+  const q = noiseStageQ(fc, fs, stages);
+  const nyq = fs / 2;
+  // Trapezoid over a log grid from 1 Hz to Nyquist; fine near any fc.
+  const N = 4000;
+  const ratio = Math.pow(nyq, 1 / (N - 1));
+  let f0 = 1;
+  let p0 = Math.pow(bandpassPower(fc, q, f0, fs), stages);
+  let area = 0;
+  for (let i = 1; i < N; i++) {
+    const f1 = f0 * ratio;
+    const p1 = Math.pow(bandpassPower(fc, q, Math.min(f1, nyq), fs), stages);
+    area += 0.5 * (p0 + p1) * (f1 - f0);
+    f0 = f1;
+    p0 = p1;
+  }
+  // White noise of variance 1 spreads its power evenly over 0..Nyquist.
+  const passed = area / nyq;
+  return Math.sqrt(0.5 / passed);
+}
