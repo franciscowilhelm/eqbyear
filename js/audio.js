@@ -1,3 +1,4 @@
+// Modified 2026 by Francisco Wilhelm (fork github.com/franciscowilhelm/eqbyear): tone width signals and per-ear routing with two filter chains.
 // Web Audio engine. Nothing is created until start() runs from a user gesture.
 // Chain: osc   -> oscMix ---+
 //        noise -> bp x2 -> noiseMix -+-> toneGain -> preampGain

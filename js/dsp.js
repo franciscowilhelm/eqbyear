@@ -1,3 +1,4 @@
+// Modified 2026 by Francisco Wilhelm (fork github.com/franciscowilhelm/eqbyear): tone width math (warble, critical-band noise).
 // Pure DSP + axis math. No DOM. Reference: design/build_mocks.py (coeffs, band_db).
 
 export const FMIN = 20;

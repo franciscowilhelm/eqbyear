@@ -1,3 +1,4 @@
+// Modified 2026 by Francisco Wilhelm (fork github.com/franciscowilhelm/eqbyear): tone width and ear state, per-ear band channels and capacity.
 // Store: state, actions, subscribe. No DOM. Every change produces a new state object.
 
 import * as dsp from './dsp.js';

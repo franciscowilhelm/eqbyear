@@ -1,3 +1,4 @@
+// Copyright 2026 Francisco Wilhelm. Licensed under the Apache License 2.0 (see LICENSE).
 // Per-ear bands: capacity per ear, channel moves, validation and PEQ export.
 // Run:  node tests/store.test.mjs
 

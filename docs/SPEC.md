@@ -1,5 +1,7 @@
 # DMS Sweep — Rev 1 build spec
 
+_Modified 2026 by Francisco Wilhelm (fork github.com/franciscowilhelm/eqbyear): Tone width and Per ear sections, state fields._
+
 Static site, vanilla HTML/CSS/JS ES modules, no build step, no dependencies.
 Served with `python3 -m http.server 8080` from the repo root. Desktop browsers only
 (Chrome, Safari, Firefox on macOS/Windows). Rev 1 has no explanatory prose beyond the

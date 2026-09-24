@@ -1,3 +1,4 @@
+// Modified 2026 by Francisco Wilhelm (fork github.com/franciscowilhelm/eqbyear): tone width tests.
 // Checks js/dsp.js against reference numbers produced by design/build_mocks.py
 // (xlog, coeffs, band_db). Run:  node tests/dsp.test.mjs
 // Exits non-zero on the first failing assertion group.

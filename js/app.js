@@ -1,3 +1,4 @@
+// Modified 2026 by Francisco Wilhelm (fork github.com/franciscowilhelm/eqbyear): tone width and ear controls, per-ear band wiring.
 // Wiring: DOM for band list / mark panel / gate / theme, keyboard, autosave.
 
 import * as dsp from './dsp.js';

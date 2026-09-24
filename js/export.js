@@ -1,3 +1,4 @@
+// Modified 2026 by Francisco Wilhelm (fork github.com/franciscowilhelm/eqbyear): per-ear Equalizer APO channel export.
 // PEQ text, clipboard, downloads, session JSON.
 
 export const PEQ_FILENAME = 'dms-sweep-peq.txt';

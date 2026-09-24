@@ -1,3 +1,4 @@
+// Modified 2026 by Francisco Wilhelm (fork github.com/franciscowilhelm/eqbyear): per-ear response curves.
 // Graph — the SVG frequency-response plot.
 // Ported from design/build_mocks.py `graph_svg` with the "Quiet" m_st() style.
 // Colours are CSS custom properties so the theme toggle repaints without a redraw.
